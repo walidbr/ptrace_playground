@@ -7,6 +7,10 @@
 #include <sys/wait.h>
 #include <stdlib.h>
 
+#ifdef __linux__
+#include "tracer_linux.h"
+#endif
+
 static std::string wrapper_lib_path() {
     // Choose appropriate shared library extension by platform
 #if defined(__APPLE__)
@@ -21,6 +25,42 @@ int main(int argc, char** argv) {
         std::cerr << "Usage: " << argv[0] << " <program> [args...]" << std::endl;
         return 1;
     }
+
+    // On Linux, support a ptrace mode to also work with static linking
+#ifdef __linux__
+    const char* mode = getenv("WRAP_MODE"); // "preload" or "ptrace" (default ptrace on Linux)
+    if (!mode || std::string(mode) == "ptrace") {
+        // Load mapping JSON into a minimal map for tracer
+        std::unordered_map<std::string, std::string> mapping;
+        const char* mapPath = getenv("WRAP_MAP");
+        if (!mapPath) mapPath = "./function_map.json";
+        // Simple parse identical to wrapper’s minimal parser
+        std::ifstream in(mapPath);
+        if (in) {
+            std::stringstream buf; buf << in.rdbuf();
+            std::string s = buf.str();
+            size_t i = 0;
+            while (true) {
+                size_t k1 = s.find('"', i); if (k1 == std::string::npos) break;
+                size_t k2 = s.find('"', k1+1); if (k2 == std::string::npos) break;
+                std::string key = s.substr(k1+1, k2-k1-1);
+                size_t c1 = s.find(':', k2); if (c1 == std::string::npos) break;
+                size_t v1 = s.find('"', c1); if (v1 == std::string::npos) break;
+                size_t v2 = s.find('"', v1+1); if (v2 == std::string::npos) break;
+                std::string val = s.substr(v1+1, v2-v1-1);
+                if (!key.empty()) mapping[key] = val;
+                i = v2 + 1;
+            }
+        }
+
+        TracerConfig cfg;
+        cfg.program = argv[1];
+        for (int i = 2; i < argc; ++i) cfg.args.emplace_back(argv[i]);
+        cfg.mapping = std::move(mapping);
+        int rc = run_with_ptrace(cfg);
+        return rc < 0 ? 1 : rc;
+    }
+#endif
 
     std::string preloadVar = "LD_PRELOAD";
     std::string lib = wrapper_lib_path();

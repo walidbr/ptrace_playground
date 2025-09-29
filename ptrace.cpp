@@ -37,6 +37,8 @@ int main(int argc, char** argv) {
         setenv("DYLD_FORCE_FLAT_NAMESPACE", "1", 1);
 #endif
         setenv(preloadVar.c_str(), lib.c_str(), 1);
+        // Provide function mapping file to wrapper
+        setenv("WRAP_MAP", "./function_map.json", 1);
         // Child: exec target
         std::vector<char*> child_argv;
         for (int i = 1; i < argc; ++i) child_argv.push_back(argv[i]);

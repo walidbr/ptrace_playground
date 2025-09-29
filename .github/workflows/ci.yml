@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  linux-matrix:
+    name: Linux ${{ matrix.os }} ({{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            os: ubuntu
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            os: ubuntu
+            arch: aarch64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build dynamic and test preload
+        run: |
+          make clean
+          make build
+          set -e
+          export WRAP_MODE=preload
+          out=$(./ptrace ./foobar 2>&1 | tee /dev/stderr)
+          echo "$out" | grep -q "wrapper to foo"
+          echo "$out" | grep -q "wrapper to bar"
+      - name: Test dynamic with ptrace mode
+        run: |
+          set -e
+          unset WRAP_MODE
+          out=$(./ptrace ./foobar 2>&1 | tee /dev/stderr)
+          echo "$out" | grep -q "wrapper to foo"
+          echo "$out" | grep -q "wrapper to bar"
+      - name: Build static and test with ptrace
+        run: |
+          set -e
+          make foobar_static
+          out=$(./ptrace ./foobar_static 2>&1 | tee /dev/stderr)
+          echo "$out" | grep -q "wrapper to foo"
+      - name: "Negative: static + preload should not interpose"
+        run: |
+          set -e
+          export WRAP_MODE=preload
+          out=$(./ptrace ./foobar_static 2>&1 | tee /dev/stderr)
+          if echo "$out" | grep -q "wrapper to foo"; then
+            echo "Unexpected interposition for static+preload" >&2
+            exit 1
+          fi
+
+  macos-matrix:
+    name: macOS ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-13, macos-14]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build dynamic and test preload
+        run: |
+          make clean
+          make build
+          set -e
+          export WRAP_MODE=preload
+          out=$(./ptrace ./foobar 2>&1 | tee /dev/stderr)
+          echo "$out" | grep -q "wrapper to foo"
+          echo "$out" | grep -q "wrapper to bar"
+      - name: Build static and show no interposition on preload
+        run: |
+          set -e
+          make foobar_static
+          export WRAP_MODE=preload
+          out=$(./ptrace ./foobar_static 2>&1 | tee /dev/stderr || true)
+          if echo "$out" | grep -q "wrapper to foo"; then
+            echo "Unexpected interposition on macOS static+preload" >&2
+            exit 1
+          fi

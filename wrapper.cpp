@@ -4,6 +4,8 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
+#include <utility>
 #include <mutex>
 
 static const char* real_lib_name() {
@@ -14,8 +16,31 @@ static const char* real_lib_name() {
 #endif
 }
 
-static std::unordered_map<std::string, std::string>& func_map() {
-    static std::unordered_map<std::string, std::string> m;
+struct FuncMaps {
+    std::unordered_map<std::string, std::string> exact;
+    std::vector<std::pair<std::string, std::string>> patterns; // preserve order
+};
+
+static bool has_wildcard(const std::string& s) {
+    return s.find('*') != std::string::npos || s.find('?') != std::string::npos;
+}
+
+static bool glob_match(const char* pat, const char* str) {
+    // simple glob: '*' matches any sequence, '?' matches one char
+    const char *s = str, *p = pat;
+    const char *star = nullptr, *ss = nullptr;
+    while (*s) {
+        if (*p == '?' || *p == *s) { ++s; ++p; continue; }
+        if (*p == '*') { star = p++; ss = s; continue; }
+        if (star) { p = star + 1; s = ++ss; continue; }
+        return false;
+    }
+    while (*p == '*') ++p;
+    return *p == '\0';
+}
+
+static FuncMaps& func_maps() {
+    static FuncMaps maps;
     static std::once_flag loaded;
     std::call_once(loaded, [](){
         const char* path = std::getenv("WRAP_MAP");
@@ -34,17 +59,26 @@ static std::unordered_map<std::string, std::string>& func_map() {
             size_t v1 = s.find('"', c1); if (v1 == std::string::npos) break;
             size_t v2 = s.find('"', v1+1); if (v2 == std::string::npos) break;
             std::string val = s.substr(v1+1, v2-v1-1);
-            if (!key.empty()) m[key] = val;
+            if (!key.empty()) {
+                if (has_wildcard(key)) maps.patterns.emplace_back(key, val);
+                else maps.exact[key] = val;
+            }
             i = v2 + 1;
         }
     });
-    return m;
+    return maps;
 }
 
 static std::string mapped_target(const char* name, const char* default_target) {
-    auto& m = func_map();
-    auto it = m.find(name);
-    if (it != m.end() && !it->second.empty()) return it->second;
+    auto& maps = func_maps();
+    auto it = maps.exact.find(name);
+    if (it != maps.exact.end() && !it->second.empty()) return it->second;
+    for (const auto& kv : maps.patterns) {
+        if (glob_match(kv.first.c_str(), name)) {
+            if (!kv.second.empty()) return kv.second;
+            break;
+        }
+    }
     return std::string(default_target);
 }
 

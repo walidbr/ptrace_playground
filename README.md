@@ -3,7 +3,9 @@ ptrace Function Wrapper Demo
 
 This small C/C++ project demonstrates launching a program with a preloadable wrapper library that intercepts functions, prints "wrapper" messages, and forwards calls to the original implementations. It also supports remapping functions via a simple JSON file, while keeping the same arguments.
 
-Note: The launcher is named `ptrace`, but it does not use the Linux `ptrace(2)` syscall. It uses dynamic loader interposition (`LD_PRELOAD` on Linux, `DYLD_INSERT_LIBRARIES` on macOS).
+Note: There are two modes:
+- Dynamic interpose mode (Linux/macOS): uses the dynamic loader (`LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`).
+- Linux ptrace mode (x86_64 and aarch64): sets breakpoints in the target to log and optionally redirect functions, which works for both statically and dynamically linked executables.
 
 Project Layout
 --------------
@@ -36,7 +38,8 @@ Run
 
 - Run the demo via the launcher (preloads the wrapper and passes the map):
   - `make run`
-  - This runs `./ptrace ./foobar`
+  - This runs `./ptrace ./foobar`.
+  - On Linux, default is ptrace mode (works with static and dynamic executables). Set `WRAP_MODE=preload` to force LD_PRELOAD mode.
 
 Expected output (abridged):
 - Hello, world!
@@ -103,6 +106,14 @@ How It Works
 ------------
 
 - Launcher (`ptrace`):
+- Linux ptrace mode (x86_64, aarch64):
+  - Starts the child under `ptrace`, reads the ELF symbols from the main executable, and sets breakpoints at mapped function entries.
+  - On breakpoint (SIGTRAP), prints `wrapper to <func>`.
+  - If mapping redirects (e.g., `foo` → `bar`), sets the program counter to the target function entry, preserving original registers/arguments.
+  - Otherwise restores the instruction, single-steps one instruction, and reinstalls the breakpoint.
+  - Note: initial implementation targets functions defined in the main executable. Extending to shared libraries is possible by parsing `/proc/<pid>/maps` and their ELF files.
+
+- Dynamic interpose mode:
   - On Linux, sets `LD_PRELOAD=./libwrap.so`.
   - On macOS, sets `DYLD_INSERT_LIBRARIES=./libwrap.dylib` and `DYLD_FORCE_FLAT_NAMESPACE=1`.
   - Sets `WRAP_MAP=./function_map.json` so the wrapper can load the mapping.
@@ -119,8 +130,9 @@ Platform Notes
 --------------
 
 - Linux:
-  - Uses `LD_PRELOAD` for interposition.
-  - Wrapper links with `-ldl`.
+  - Two modes:
+    - ptrace mode (default): works for static and dynamic executables; supports x86_64 and aarch64. Requires `ptrace` permissions (Yama/SELinux may restrict).
+    - preload mode: uses `LD_PRELOAD` for interposition; wrapper links with `-ldl`.
 - macOS:
   - Uses `DYLD_INSERT_LIBRARIES`; `DYLD_FORCE_FLAT_NAMESPACE=1` is set to make interposition work with flat namespace.
   - Some macOS security settings can restrict injecting into system-signed binaries; this demo targets local binaries in the current directory.

@@ -17,7 +17,12 @@ endif
 
 all: build
 
-build: foobar ptrace libwrap.$(SHLIB_EXT)
+build: oxygen libwrap.$(SHLIB_EXT) foobar_test_program
+	$(MAKE) -C injections/foobar
+	$(MAKE) -C injections/vulkan
+
+foobar_test_program: foobar_test_program.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
 ifeq ($(OS),Darwin)
     RPATH_FLAG = -Wl,-rpath,@loader_path
@@ -25,22 +30,18 @@ else
     RPATH_FLAG = -Wl,-rpath,\$$ORIGIN
 endif
 
-foobar: foobar.cpp libfoobar.$(SHLIB_EXT)
-	$(CXX) $(CXXFLAGS) -o $@ foobar.cpp $(RPATH_FLAG) -L. -lfoobar $(LDFLAGS)
-
-ptrace: ptrace.cpp
+oxygen: oxygen.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
 libwrap.$(SHLIB_EXT): wrapper.cpp
 	$(CXX) $(CXXFLAGS) $(SHLIB_LDFLAGS) -o $@ $< $(DL_LIB) $(LDFLAGS)
 
-libfoobar.$(SHLIB_EXT): foobar_lib.c
-	$(CC) $(CFLAGS) $(SHLIB_LDFLAGS) -o $@ $< $(LDFLAGS)
-
-run: build
-	./ptrace ./foobar
+check: build
+	./oxygen foobar ./foobar_test_program
 
 clean:
-	rm -f foobar ptrace libwrap.so libwrap.dylib libfoobar.so libfoobar.dylib
+	rm -f oxygen libwrap.so libwrap.dylib
+	$(MAKE) -C injections/foobar clean
+	$(MAKE) -C injections/vulkan clean
 
 .PHONY: all build run clean

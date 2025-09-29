@@ -1,0 +1,12 @@
+{
+  "vkCmdBeginDebugUtilsLabelEXT": "vkCmdBeginDebugUtilsLabelEXT",
+  "vkCmdEndDebugUtilsLabelEXT": "vkCmdEndDebugUtilsLabelEXT",
+  "vkGetInstanceProcAddr": "vkGetInstanceProcAddr",
+  "vkGetDeviceProcAddr": "vkGetDeviceProcAddr",
+  "vkCreateDevice": "vkCreateDevice",
+  "vkDestroyDevice": "vkDestroyDevice",
+  "vkBeginCommandBuffer": "vkBeginCommandBuffer",
+  "vkEndCommandBuffer": "vkEndCommandBuffer",
+  "vkQueueSubmit": "vkQueueSubmit",
+  "vkQueueWaitIdle": "vkQueueWaitIdle"
+}

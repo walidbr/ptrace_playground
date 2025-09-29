@@ -9,10 +9,12 @@
 #include <mutex>
 
 static const char* real_lib_name() {
+    const char* path = std::getenv("REAL_LIB_PATH");
+    if (path) return path;
 #if defined(__APPLE__)
-    return "./libfoobar.dylib";
+    return "./libfoobar.dylib"; // Fallback, though should be set by ptrace
 #else
-    return "./libfoobar.so";
+    return "./libfoobar.so"; // Fallback, though should be set by ptrace
 #endif
 }
 
@@ -126,4 +128,25 @@ extern "C" int bar(const char* s) {
         }
     }
     return real_bar(s);
+}
+
+extern "C" int puts(const char* s) {
+    std::cout << "wrapper to puts" << std::endl;
+    using puts_fn = int(*)(const char*);
+    static puts_fn foobar_puts = nullptr;
+
+    if (!foobar_puts) {
+        std::string tgt = mapped_target("puts", "puts");
+        void* h = dlopen(real_lib_name(), RTLD_NOW | RTLD_LOCAL);
+        if (!h) {
+            std::cerr << "Failed to dlopen real lib for puts: " << dlerror() << std::endl;
+            std::abort();
+        }
+        foobar_puts = (puts_fn)dlsym(h, tgt.c_str());
+        if (!foobar_puts) {
+            std::cerr << "Failed to resolve puts from real lib: " << dlerror() << std::endl;
+            std::abort();
+        }
+    }
+    return foobar_puts(s);
 }
